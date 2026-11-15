@@ -1,0 +1,120 @@
+// The detail panel for the selected entry: its name, where it lives, the switch as a button
+// (with why there is none, or what Apply will do), and every fact: the command raw and
+// expanded, the target, the signer and what the file says it is from, the full location, every
+// date with its source, the account, a task's runs, a service's start type. Long values wrap;
+// one accessibility node per field.
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme, Type, Button, ButtonKind } from "@vibeware";
+import { DetailInfo, DetailPair } from "types.slint";
+
+component FieldRow inherits Rectangle {
+    in property <DetailPair> p;
+    accessible-role: list-item;
+    accessible-label: p.key;
+    accessible-description: p.value;
+    min-height: lay.preferred-height;
+    lay := HorizontalLayout {
+        padding-top: 2px;
+        padding-bottom: 2px;
+        spacing: 12px;
+        Text {
+            width: 132px;
+            text: root.p.key;
+            font-size: Type.small;
+            color: Theme.ink-3;
+            wrap: word-wrap;
+            min-height: self.preferred-height;
+            accessible-role: none;
+        }
+        Text {
+            text: root.p.value;
+            font-family: root.p.mono ? Type.mono : Type.ui;
+            font-size: Type.small;
+            color: root.p.tone == 3 ? Theme.danger-text : root.p.tone == 2 ? Theme.warn-text : Theme.ink-2;
+            wrap: word-wrap;
+            horizontal-stretch: 1;
+            min-width: 0px;
+            min-height: self.preferred-height;
+            accessible-role: none;
+        }
+    }
+}
+
+export component DetailPanel inherits Rectangle {
+    in property <DetailInfo> d;
+    in property <[DetailPair]> pairs;
+    in property <bool> inert;
+    callback act();
+
+    // No background: the window's own is under it (one fill per region).
+    accessible-role: groupbox;
+    accessible-label: "Details";
+
+    if !root.d.shown: Text {
+        text: "Pick an entry to see where it comes from.";
+        font-size: Type.small;
+        color: Theme.ink-3;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    if root.d.shown: HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 6px;
+        padding-top: 12px;
+        padding-bottom: 10px;
+        spacing: 16px;
+        VerticalLayout {
+            width: 230px;
+            spacing: 6px;
+            alignment: start;
+            // At most two lines (a long name is in full among the fields).
+            Text {
+                text: root.d.title;
+                font-size: Type.body;
+                font-weight: Type.strong;
+                color: Theme.ink;
+                wrap: word-wrap;
+                overflow: elide;
+                height: min(self.preferred-height, 40px);
+            }
+            Text {
+                text: root.d.where;
+                font-size: Type.small;
+                color: Theme.ink-3;
+                wrap: word-wrap;
+                min-height: self.preferred-height;
+            }
+            if root.d.action != "": HorizontalLayout {
+                alignment: start;
+                padding-top: 4px;
+                Button {
+                    text: root.d.action;
+                    kind: ButtonKind.secondary;
+                    enabled: root.d.can-act;
+                    inert: root.inert;
+                    clicked => { root.act(); }
+                }
+            }
+            if root.d.action-note != "": Text {
+                text: root.d.action-note;
+                font-size: Type.small;
+                color: Theme.ink-3;
+                wrap: word-wrap;
+                min-height: self.preferred-height;
+            }
+        }
+        sv := ScrollView {
+            horizontal-stretch: 1;
+            content-width: self.visible-width;
+            content-height: content.preferred-height;
+            content := VerticalLayout {
+                width: sv.visible-width - 10px;
+                spacing: 2px;
+                alignment: start;
+                for p in root.pairs: FieldRow { p: p; }
+            }
+        }
+    }
+}

@@ -1,0 +1,259 @@
+// The top bar (Scan again, Full scan, the Portable chip, Journal, the report, theme, About) and
+// the filter row under it (three toggles and the text filter). They draw; Rust decides.
+
+import { Theme, Type, Icons, Icon, Button, ButtonKind, IconButton, Field, Chamfer, TipArea } from "@vibeware";
+import { Brand } from "brand.slint";
+import { AppIcons } from "app-icons.slint";
+
+// "Portable": the app keeps its things beside the exe (tooltip: the folder).
+component PortableChip inherits Rectangle {
+    in property <string> tip;
+    height: 20px;
+    width: row.preferred-width + 14px;
+    accessible-role: text;
+    accessible-label: "Portable";
+    accessible-description: root.tip;
+    Chamfer {
+        width: 100%;
+        height: 100%;
+        cut: 5px;
+        fill: Theme.accent-soft;
+        stroke: Theme.accent.with-alpha(0.7);
+    }
+    row := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 8px;
+        spacing: 4px;
+        VerticalLayout {
+            alignment: center;
+            Icon { path: AppIcons.stick; tint: Theme.accent; }
+        }
+        Text {
+            text: "Portable";
+            font-size: Type.small;
+            color: Theme.accent;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    TipArea { tooltip: root.tip; }
+}
+
+export component TopBar inherits Rectangle {
+    in property <bool> scanning;
+    in property <bool> busy;
+    in property <bool> has-report;
+    in property <string> portable;
+    in property <string> full-tip;
+    in property <bool> inert;
+    callback scan();
+    callback full-scan();
+    callback journal();
+    callback copy-report() -> bool;
+    callback save-report();
+    callback toggle-theme();
+    callback about();
+
+    height: 48px;
+    background: Theme.bg;
+
+    property <bool> copied;
+    settle := Timer {
+        interval: 1500ms;
+        running: false;
+        triggered => {
+            root.copied = false;
+            self.running = false;
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 10px;
+        spacing: 8px;
+        Brand { horizontal-stretch: 0; }
+        if root.portable != "": VerticalLayout {
+            alignment: center;
+            PortableChip { tip: root.portable; }
+        }
+        Rectangle { width: 6px; }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                text: "Scan again";
+                icon: Icons.refresh;
+                kind: ButtonKind.primary;
+                tooltip: "Read every place again (F5)";
+                enabled: !root.scanning && !root.busy;
+                inert: root.inert;
+                clicked => { root.scan(); }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                text: "Full scan";
+                icon: AppIcons.shield;
+                kind: ButtonKind.secondary;
+                tooltip: root.full-tip;
+                enabled: !root.scanning && !root.busy;
+                inert: root.inert;
+                clicked => { root.full-scan(); }
+            }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                text: "Journal";
+                icon: AppIcons.journal;
+                kind: ButtonKind.ghost;
+                tooltip: "Every change made on this PC, with Undo";
+                inert: root.inert;
+                clicked => { root.journal(); }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: root.copied ? Icons.check : Icons.copy;
+                label: root.copied ? "Copied" : "Copy report";
+                tooltip: "Copy the report as text";
+                enabled: root.has-report;
+                inert: root.inert;
+                enter-presses: false;
+                clicked => {
+                    if (root.copy-report()) {
+                        root.copied = true;
+                        settle.running = true;
+                        settle.restart();
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: AppIcons.save;
+                label: "Save report";
+                tooltip: "Save the report as text…";
+                enabled: root.has-report;
+                inert: root.inert;
+                clicked => { root.save-report(); }
+            }
+        }
+        Rectangle {
+            width: 1px;
+            background: Theme.line;
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.theme;
+                label: "Theme";
+                tooltip: Theme.dark ? "Light theme" : "Dark theme";
+                inert: root.inert;
+                clicked => { root.toggle-theme(); }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.info;
+                label: "About";
+                tooltip: "About VibeBoot";
+                inert: root.inert;
+                clicked => { root.about(); }
+            }
+        }
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.line;
+    }
+}
+
+export component FilterBar inherits Rectangle {
+    in property <bool> recent;
+    in property <string> recent-label: "Added in the last 30 days";
+    in property <string> recent-tip: "Entries whose best date (shown with its source) is in the last 30 days";
+    in property <bool> new-only;
+    in property <bool> not-ms;
+    in-out property <string> text;
+    in property <string> last-look;
+    in property <bool> inert;
+    callback toggle(int);
+    callback text-edited(string);
+    // Escape in the filter: true when it cleared something.
+    callback text-escaped() -> bool;
+
+    public function focus-filter() {
+        field.focus-input();
+    }
+
+    height: 40px;
+    background: Theme.bg;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 6px;
+        VerticalLayout {
+            alignment: center;
+            Button {
+                text: root.recent-label;
+                kind: ButtonKind.ghost;
+                active: root.recent;
+                toggle: true;
+                tooltip: root.recent-tip;
+                inert: root.inert;
+                clicked => { root.toggle(0); }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                text: "New since the last look";
+                kind: ButtonKind.ghost;
+                active: root.new-only;
+                toggle: true;
+                tooltip: root.last-look;
+                inert: root.inert;
+                clicked => { root.toggle(1); }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                text: "Not from Microsoft only";
+                kind: ButtonKind.ghost;
+                active: root.not-ms;
+                toggle: true;
+                tooltip: "Microsoft's own entries folded away in each group";
+                inert: root.inert;
+                clicked => { root.toggle(2); }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            field := Field {
+                min-width: 120px;
+                a11y-name: "Filter";
+                placeholder: "Filter by name, publisher or command";
+                text <=> root.text;
+                inert: root.inert;
+                edited(t) => { root.text-edited(t); }
+                escaped => { root.text-escaped() }
+            }
+        }
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.line;
+    }
+}

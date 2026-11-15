@@ -1,0 +1,69 @@
+// The rows and records Rust hands the window. Every string is formatted in Rust; the .slint files
+// only lay them out.
+
+// A chip in a row: "unsigned", "file missing", "new", "hidden command".
+// tone: 0 quiet, 1 accent (new), 2 warn, 3 danger.
+export struct ChipItem {
+    text: string,
+    tone: int,
+}
+
+// One row of the list. kind: 0 a group's head, 1 an entry, 2 the Microsoft fold of a group.
+export struct EntryRow {
+    id: int,
+    kind: int,
+    // Head: the group's title. Entry: its name. Fold: "41 from Microsoft".
+    title: string,
+    // Head: "12 entries", "Scanning…", "could not be read: …". Entry: the publisher. Fold: "show" / "hide".
+    sub: string,
+    // 0 normal, 2 warn, 3 danger (a head that could not be read, a broken signature).
+    sub-tone: int,
+    // The switch: 0 on, 1 off, 2 none (a lock), 3 on once applied (queued), 4 off once
+    // applied (queued), 5 changing now, 6 unknown.
+    switch: int,
+    // The switch's tooltip: why there is none, or what is queued.
+    switch-tip: string,
+    chips: [ChipItem],
+    // "added 12.10.2026" (the best date), or "".
+    added: string,
+    added-tip: string,
+    selected: bool,
+    // What a screen reader says about the row.
+    a11y: string,
+}
+
+// The detail panel's head.
+export struct DetailInfo {
+    shown: bool,
+    title: string,
+    // "Run key (this user)".
+    where: string,
+    // The switch button: "Turn off", "Turn on", "Take back" (queued), "" for none.
+    action: string,
+    can-act: bool,
+    // Why there is no switch, or what happens on Apply.
+    action-note: string,
+}
+
+// A field in the detail panel: "Command", "\"C:\\…\" /tray". mono: paths and commands.
+// tone: 0 normal, 2 warn, 3 danger.
+export struct DetailPair {
+    key: string,
+    value: string,
+    mono: bool,
+    tone: int,
+}
+
+// One change in the Journal dialog.
+export struct JournalRow {
+    id: string,
+    when: string,
+    what: string,
+    change: string,
+    status: string,
+    // 0 done, 1 pending, 2 failed, 3 undone.
+    tone: int,
+    can-undo: bool,
+    selected: bool,
+    a11y: string,
+}

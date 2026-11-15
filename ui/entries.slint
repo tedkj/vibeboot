@@ -1,0 +1,322 @@
+// The grouped list: a head per group ("When you sign in · 12"), the entries not from Microsoft,
+// then Microsoft's folded into one row ("41 from Microsoft · show"). A row: the switch (a lock
+// where there is none, its reason as tooltip), the name, the publisher, chips, the added date.
+// One accessibility node per row (VIBEWARE.md): the texts and the switch inside are not nodes;
+// the switch is also on the row's Space key and the detail panel's button.
+
+import { ListView } from "std-widgets.slint";
+import { Theme, Type, Icons, Icon, Chamfer, TipArea } from "@vibeware";
+import { EntryRow, ChipItem } from "types.slint";
+
+export global Cols {
+    out property <length> row-h: 28px;
+    out property <length> switch: 30px;
+    out property <length> name-min: 120px;
+    out property <length> publisher: 170px;
+    out property <length> chips: 210px;
+    out property <length> added: 120px;
+    out property <length> spacing: 10px;
+}
+
+// The switch: a cut track and a square knob. On: the accent. Queued: the accent's outline, the
+// knob where it will be. Changing: the knob in the middle. A lock where there is no switch.
+export component Toggle inherits Rectangle {
+    in property <int> state;
+    in property <string> tip;
+    callback clicked();
+    width: Cols.switch;
+    height: Cols.row-h;
+    accessible-role: none;
+    property <bool> on: root.state == 0 || root.state == 3;
+    property <bool> queued: root.state == 3 || root.state == 4;
+    property <bool> live: root.state <= 1 || root.state == 3 || root.state == 4;
+    if root.live || root.state == 5: Rectangle {
+        x: 2px;
+        y: (parent.height - 14px) / 2;
+        width: 26px;
+        height: 14px;
+        Chamfer {
+            width: 100%;
+            height: 100%;
+            cut: 4px;
+            fill: root.queued ? Theme.accent-soft : root.on ? Theme.accent : transparent;
+            stroke: root.queued || root.on ? Theme.accent : ta.has-hover ? Theme.ink-2 : Theme.line-strong;
+        }
+        Rectangle {
+            x: root.state == 5 ? 9px : root.on ? 15px : 3px;
+            y: 3px;
+            width: 8px;
+            height: 8px;
+            background: root.queued ? transparent : root.on ? Theme.accent-ink : root.state == 5 ? Theme.ink-3 : Theme.ink-2;
+            border-width: root.queued ? 1px : 0px;
+            border-color: Theme.accent;
+        }
+    }
+    if root.state == 2: Icon {
+        x: 7px;
+        y: (parent.height - 16px) / 2;
+        path: Icons.lock;
+        tint: Theme.ink-3;
+    }
+    if root.state == 6: Icon {
+        x: 7px;
+        y: (parent.height - 16px) / 2;
+        path: Icons.alert;
+        tint: Theme.warn;
+    }
+    ta := TipArea {
+        tooltip: root.tip;
+        mouse-cursor: root.live ? pointer : default;
+        clicked => {
+            if (root.live) {
+                root.clicked();
+            }
+        }
+    }
+}
+
+export component Chip inherits Rectangle {
+    in property <ChipItem> c;
+    height: 16px;
+    width: t.preferred-width + 10px;
+    accessible-role: none;
+    property <color> ink: root.c.tone == 1 ? Theme.accent : root.c.tone == 2 ? Theme.warn : root.c.tone == 3 ? Theme.danger : Theme.ink-3;
+    Chamfer {
+        width: 100%;
+        height: 100%;
+        cut: 4px;
+        fill: root.c.tone == 1 ? Theme.accent-soft : transparent;
+        stroke: root.c.tone == 0 ? Theme.line-strong : root.ink.with-alpha(0.7);
+    }
+    t := Text {
+        text: root.c.text;
+        font-size: Type.small;
+        color: Theme.as-text(root.ink);
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        accessible-role: none;
+    }
+}
+
+component Line inherits Rectangle {
+    in property <EntryRow> r;
+    callback clicked();
+    callback switch-clicked();
+    height: Cols.row-h;
+    accessible-role: list-item;
+    accessible-label: root.r.title;
+    accessible-description: root.r.a11y;
+    accessible-item-selectable: root.r.kind != 0;
+    accessible-item-selected: root.r.selected;
+    accessible-action-default => { root.clicked(); }
+
+    background: root.r.selected ? Theme.accent-soft : ta.has-hover && root.r.kind != 0 ? Theme.surface-2 : transparent;
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+    if root.r.selected: Rectangle {
+        x: 0;
+        width: 2px;
+        background: Theme.accent;
+    }
+
+    // A group's head.
+    if root.r.kind == 0: HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 4px;
+        spacing: 10px;
+        Text {
+            text: root.r.title;
+            font-size: Type.small;
+            font-weight: Type.strong;
+            color: Theme.ink;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        Text {
+            text: root.r.sub;
+            font-family: Type.mono;
+            font-size: Type.small;
+            color: root.r.sub-tone == 3 ? Theme.danger-text : root.r.sub-tone == 2 ? Theme.warn-text : Theme.ink-3;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+            min-width: 0px;
+            accessible-role: none;
+        }
+    }
+    if root.r.kind == 0: Rectangle {
+        y: parent.height - 1px;
+        x: 12px;
+        width: parent.width - 24px;
+        height: 1px;
+        background: Theme.line;
+    }
+
+    // The Microsoft fold.
+    if root.r.kind == 2: HorizontalLayout {
+        padding-left: 12px + Cols.switch + Cols.spacing;
+        padding-right: 12px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                path: root.r.sub == "hide" ? Icons.chevron-down : Icons.chevron-right;
+                tint: Theme.ink-3;
+            }
+        }
+        Text {
+            text: root.r.title;
+            font-size: Type.small;
+            color: Theme.ink-2;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        Text {
+            text: root.r.sub;
+            font-size: Type.small;
+            color: Theme.accent;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            accessible-role: none;
+        }
+    }
+
+    // An entry.
+    if root.r.kind == 1: HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: Cols.spacing;
+        Toggle {
+            state: root.r.switch;
+            tip: root.r.switch-tip;
+            clicked => { root.switch-clicked(); }
+        }
+        Text {
+            text: root.r.title;
+            font-size: Type.small;
+            color: root.r.switch == 1 || root.r.switch == 4 ? Theme.ink-3 : Theme.ink;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+            min-width: Cols.name-min;
+            accessible-role: none;
+        }
+        Text {
+            width: Cols.publisher;
+            text: root.r.sub;
+            font-size: Type.small;
+            color: root.r.sub-tone == 3 ? Theme.danger-text : root.r.sub-tone == 2 ? Theme.warn-text : Theme.ink-2;
+            vertical-alignment: center;
+            overflow: elide;
+            accessible-role: none;
+        }
+        Rectangle {
+            width: Cols.chips;
+            clip: true;
+            HorizontalLayout {
+                alignment: start;
+                spacing: 4px;
+                for c in root.r.chips: VerticalLayout {
+                    alignment: center;
+                    Chip { c: c; }
+                }
+            }
+        }
+        Rectangle {
+            width: Cols.added;
+            Text {
+                width: 100%;
+                height: 100%;
+                text: root.r.added;
+                font-family: Type.mono;
+                font-size: Type.small;
+                color: Theme.ink-3;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+                overflow: elide;
+                accessible-role: none;
+            }
+            TipArea {
+                tooltip: root.r.added-tip;
+            }
+        }
+    }
+}
+
+export component EntryList inherits Rectangle {
+    in property <[EntryRow]> rows;
+    in property <string> empty-text;
+    in property <bool> inert;
+    // The row to bring into view, and a seq Rust bumps each time it should be (keys).
+    in property <int> scroll-to: -1;
+    in property <int> scroll-seq;
+    callback row-clicked(int);
+    callback switch-clicked(int);
+    // A key nothing else took (Up/Down, Home/End, Space, Enter): true when Rust used it.
+    callback key(string, bool, bool) -> bool;
+
+    public function focus-list() {
+        fs.focus();
+    }
+
+    // Deferred: the list lays the rows out first; twice, as one pass was measured not enough
+    // for End (VIBEWARE.md).
+    changed scroll-seq => {
+        later.passes = 2;
+        later.running = true;
+    }
+    later := Timer {
+        property <int> passes;
+        interval: 1ms;
+        running: false;
+        triggered => {
+            self.passes -= 1;
+            if (self.passes <= 0) {
+                self.running = false;
+            }
+            if (root.scroll-to >= 0) {
+                let top = root.scroll-to * Cols.row-h;
+                if (top < -list.content-y) {
+                    list.content-y = -top;
+                } else if (top + Cols.row-h > -list.content-y + list.visible-height) {
+                    list.content-y = -(top + Cols.row-h - list.visible-height);
+                }
+            }
+        }
+    }
+
+    fs := FocusScope {
+        accessible-role: AccessibleRole.list;
+        accessible-label: "Entries";
+        focus-on-tab-navigation: !root.inert;
+        key-pressed(e) => {
+            if (root.key(e.text, e.modifiers.control, e.modifiers.shift)) {
+                return accept;
+            }
+            reject
+        }
+        list := ListView {
+            for r in root.rows: Line {
+                r: r;
+                clicked => {
+                    fs.focus();
+                    root.row-clicked(r.id);
+                }
+                switch-clicked => {
+                    fs.focus();
+                    root.switch-clicked(r.id);
+                }
+            }
+        }
+    }
+    if root.rows.length == 0 && root.empty-text != "": Text {
+        text: root.empty-text;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-size: Type.small;
+        color: Theme.ink-3;
+        wrap: word-wrap;
+    }
+}

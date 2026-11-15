@@ -1,0 +1,365 @@
+// VibeBoot's main window. Layout and drawing only; every decision is made in Rust.
+
+import { Theme, Type, Icons, Icon, Button, ButtonKind, TipLayer, Toast, ToastKind } from "@vibeware";
+import { AboutDialog, CheckRow } from "brand.slint";
+import { TopBar, FilterBar } from "topbar.slint";
+import { EntryList } from "entries.slint";
+import { DetailPanel } from "detail.slint";
+import { JournalDialog } from "journal.slint";
+import { AppIcons } from "app-icons.slint";
+import { EntryRow, ChipItem, DetailInfo, DetailPair, JournalRow } from "types.slint";
+
+export { EntryRow, ChipItem, DetailInfo, DetailPair, JournalRow }
+
+export struct ToastItem {
+    id: int,
+    text: string,
+    kind: ToastKind,
+    action: string,
+}
+
+export component AppWindow inherits Window {
+    title: "VibeBoot";
+    icon: @image-url("../assets/app-128.png");
+    preferred-width: 1100px;
+    preferred-height: 720px;
+    min-width: 860px;
+    min-height: 540px;
+    // The list's colour: it covers most of the window (one fill per frame, VIBEWARE.md). The
+    // bars draw their own.
+    background: Theme.surface;
+    default-font-family: Type.ui;
+    default-font-size: Type.small;
+    default-font-weight: Type.regular;
+
+    in property <string> version;
+    in property <string> status-left;
+    in property <string> status-right;
+    in property <[ToastItem]> toasts;
+    in-out property <bool> about-open;
+    // About's version line and its install check (the controller's words and states).
+    in property <string> about-line;
+    in property <[CheckRow]> check-rows;
+    in property <bool> checking;
+    in property <bool> checked;
+    in-out property <bool> journal-open;
+    property <bool> dialog-open: root.about-open || root.journal-open;
+
+    // ---- the bars ----
+    in property <bool> scanning;
+    in property <bool> busy;
+    in property <bool> has-report;
+    in property <string> portable;
+    in property <string> full-tip;
+    in property <bool> f-recent;
+    in property <bool> f-new;
+    in property <bool> f-not-ms: true;
+    in-out property <string> f-text;
+    in property <string> last-look;
+    in property <string> f-recent-label: "Added in the last 30 days";
+    in property <string> f-recent-tip: "Entries whose best date (shown with its source) is in the last 30 days";
+
+    // ---- the summary, the admin bar, the list, the detail ----
+    in property <string> summary;
+    in property <int> summary-tone;
+    in property <string> list-note;
+    in property <string> admin-text;
+    in property <bool> admin-busy;
+    in property <[EntryRow]> rows;
+    in property <string> rows-empty;
+    in property <int> scroll-to: -1;
+    in property <int> scroll-seq;
+    in property <DetailInfo> detail;
+    in property <[DetailPair]> detail-pairs;
+
+    // ---- the journal ----
+    in property <[JournalRow]> journal-rows;
+    in property <string> journal-note;
+    in property <bool> journal-can-undo;
+    in property <bool> journal-can-undo-all;
+
+    callback toggle-theme();
+    // About: "Check this install" pressed (the controller runs it on a worker, once at a time),
+    // and the website link.
+    callback check-install();
+    callback open-site();
+    callback toast-action(int);
+    callback toast-dismissed(int);
+    // A dialog closed: toasts behind it get their full time again (a toast in sight but out of
+    // reach must not expire).
+    callback dialogs-closed();
+    callback copy-text(string) -> bool;
+    callback scan();
+    callback full-scan();
+    callback open-journal();
+    callback copy-report() -> bool;
+    callback save-report();
+    callback filter-toggled(int);
+    callback filter-edited(string);
+    callback filter-escaped() -> bool;
+    callback row-clicked(int);
+    callback switch-clicked(int);
+    callback detail-act();
+    callback apply();
+    callback discard();
+    callback journal-picked(string);
+    callback journal-undo();
+    callback journal-undo-all();
+    // A key in the journal's list (X15A11Y-2): the row it picked, -1 when Rust did not use it.
+    callback journal-key(string) -> int;
+    // A key nothing focused took: Up/Down, Home/End, Space, Enter, F5, Ctrl+F. True when Rust
+    // used it.
+    callback key(string, bool, bool) -> bool;
+
+    public function focus-list() {
+        list.focus-list();
+    }
+
+    public function focus-filter() {
+        filters.focus-filter();
+    }
+
+    changed dialog-open => {
+        if (!self.dialog-open) {
+            root.dialogs-closed();
+        }
+    }
+
+    keys := FocusScope {
+        focus-on-click: false;
+        // The window's key catcher is no Tab stop: a Tab past a dialog's last button must not land
+        // here, where Escape would not reach the dialog (About v2 has three stops; 2026-11-04).
+        focus-on-tab-navigation: false;
+        key-pressed(e) => {
+            if (!root.dialog-open && root.key(e.text, e.modifiers.control, e.modifiers.shift)) {
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            TopBar {
+                scanning: root.scanning;
+                busy: root.busy;
+                has-report: root.has-report;
+                portable: root.portable;
+                full-tip: root.full-tip;
+                inert: root.dialog-open;
+                scan => { root.scan(); }
+                full-scan => { root.full-scan(); }
+                journal => { root.open-journal(); }
+                copy-report => { root.copy-report() }
+                save-report => { root.save-report(); }
+                toggle-theme => { root.toggle-theme(); }
+                about => { root.about-open = true; }
+            }
+            filters := FilterBar {
+                recent: root.f-recent;
+                recent-label: root.f-recent-label;
+                recent-tip: root.f-recent-tip;
+                new-only: root.f-new;
+                not-ms: root.f-not-ms;
+                text <=> root.f-text;
+                last-look: root.last-look;
+                inert: root.dialog-open;
+                toggle(i) => { root.filter-toggled(i); }
+                text-edited(t) => { root.filter-edited(t); }
+                text-escaped => { root.filter-escaped() }
+            }
+
+            // The summary.
+            Rectangle {
+                height: 30px;
+                background: Theme.bg;
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    Text {
+                        text: root.summary;
+                        font-size: Type.small;
+                        color: root.summary-tone == 3 ? Theme.danger-text : root.summary-tone == 2 ? Theme.warn-text : Theme.ink-2;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                        min-width: 0px;
+                    }
+                }
+                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+            }
+
+            // The admin bar: changes waiting for administrator rights.
+            if root.admin-text != "": Rectangle {
+                height: 40px;
+                background: Theme.accent-soft;
+                accessible-role: groupbox;
+                accessible-label: "Administrator changes";
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 10px;
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icon { path: AppIcons.shield; tint: Theme.accent; }
+                    }
+                    Text {
+                        text: root.admin-text;
+                        font-size: Type.small;
+                        color: Theme.ink;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                        min-width: 0px;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Button {
+                            text: "Apply";
+                            icon: AppIcons.shield;
+                            kind: ButtonKind.primary;
+                            tooltip: "One Windows prompt for administrator rights per kind of change. Run VibeBoot in an administrator's own session: another account's password at the prompt does not reach it.";
+                            enabled: !root.admin-busy;
+                            inert: root.dialog-open;
+                            clicked => { root.apply(); }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Button {
+                            text: "Discard";
+                            kind: ButtonKind.ghost;
+                            enabled: !root.admin-busy;
+                            inert: root.dialog-open;
+                            clicked => { root.discard(); }
+                        }
+                    }
+                }
+                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+            }
+
+            // The list's head on a first look at a PC: what the 30-day filter can and cannot say.
+            if root.list-note != "": Rectangle {
+                height: 26px;
+                background: Theme.bg;
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    Text {
+                        text: root.list-note;
+                        font-size: Type.small;
+                        color: Theme.ink-2;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                        min-width: 0px;
+                    }
+                }
+                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+            }
+
+            list := EntryList {
+                vertical-stretch: 1;
+                min-height: 140px;
+                rows: root.rows;
+                empty-text: root.rows-empty;
+                scroll-to: root.scroll-to;
+                scroll-seq: root.scroll-seq;
+                inert: root.dialog-open;
+                row-clicked(i) => { root.row-clicked(i); }
+                switch-clicked(i) => { root.switch-clicked(i); }
+                key(t, c, s) => { root.key(t, c, s) }
+            }
+            Rectangle { height: 1px; background: Theme.line; }
+            DetailPanel {
+                height: 196px;
+                d: root.detail;
+                pairs: root.detail-pairs;
+                inert: root.dialog-open;
+                act => { root.detail-act(); }
+            }
+
+            // ---- the status line ----
+            Rectangle {
+                height: 26px;
+                background: Theme.bg;
+                Rectangle { y: 0; height: 1px; background: Theme.line; }
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    spacing: 12px;
+                    Text {
+                        text: root.status-left;
+                        font-family: Type.mono;
+                        color: Theme.ink-3;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                        min-width: 0px;
+                    }
+                    Text {
+                        text: root.status-right;
+                        font-family: Type.mono;
+                        color: Theme.ink-3;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+
+    // Toasts, bottom right, newest at the bottom, above the status line. In sight behind a
+    // dialog (under its scrim), out of the Tab order there.
+    VerticalLayout {
+        x: root.width - self.width - 14px;
+        y: root.height - self.height - 40px;
+        width: 380px;
+        height: self.preferred-height;
+        spacing: 8px;
+        for t in root.toasts: Toast {
+            text: t.text;
+            kind: t.kind;
+            action: t.action;
+            inert: root.dialog-open;
+            action-clicked => { root.toast-action(t.id); }
+            dismissed => { root.toast-dismissed(t.id); }
+            copy => { root.copy-text(t.text) }
+        }
+    }
+
+    if root.journal-open: JournalDialog {
+        width: root.width;
+        height: root.height;
+        rows: root.journal-rows;
+        note: root.journal-note;
+        can-undo: root.journal-can-undo;
+        can-undo-all: root.journal-can-undo-all;
+        busy: root.busy;
+        picked(id) => { root.journal-picked(id); }
+        key(t) => { root.journal-key(t) }
+        undo => { root.journal-undo(); }
+        undo-all => { root.journal-undo-all(); }
+        closed => {
+            root.journal-open = false;
+            root.focus-list();
+        }
+    }
+
+    if root.about-open: AboutDialog {
+        width: root.width;
+        height: root.height;
+        line: root.about-line;
+        rows: root.check-rows;
+        checking: root.checking;
+        checked: root.checked;
+        check => { root.check-install(); }
+        open-site => { root.open-site(); }
+        closed => {
+            root.about-open = false;
+            root.focus-list();
+        }
+    }
+
+    TipLayer {
+        width: root.width;
+        height: root.height;
+    }
+}

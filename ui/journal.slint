@@ -1,0 +1,166 @@
+// The Journal dialog: every change made on this PC, newest first; Undo for the one picked, and
+// "Undo all from this session". One accessibility node per row.
+
+import { ListView } from "std-widgets.slint";
+import { Theme, Type, Button, ButtonKind, Dialog } from "@vibeware";
+import { JournalRow } from "types.slint";
+import { AppIcons } from "app-icons.slint";
+
+component JLine inherits Rectangle {
+    in property <JournalRow> r;
+    callback clicked();
+    height: 44px;
+    accessible-role: list-item;
+    accessible-label: root.r.what;
+    accessible-description: root.r.a11y;
+    accessible-item-selectable: true;
+    accessible-item-selected: root.r.selected;
+    accessible-action-default => { root.clicked(); }
+    background: root.r.selected ? Theme.accent-soft : ta.has-hover ? Theme.surface-3 : transparent;
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+    if root.r.selected: Rectangle {
+        x: 0;
+        width: 2px;
+        background: Theme.accent;
+    }
+    VerticalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 10px;
+            Text {
+                text: root.r.what;
+                font-size: Type.small;
+                font-weight: Type.strong;
+                color: Theme.ink;
+                overflow: elide;
+                horizontal-stretch: 1;
+                min-width: 0px;
+                accessible-role: none;
+            }
+            Text {
+                text: root.r.status;
+                font-size: Type.small;
+                color: root.r.tone == 2 ? Theme.danger-text : root.r.tone == 1 ? Theme.warn-text : root.r.tone == 3 ? Theme.ink-3 : Theme.ok-text;
+                accessible-role: none;
+            }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            Text {
+                text: root.r.when;
+                font-family: Type.mono;
+                font-size: Type.small;
+                color: Theme.ink-3;
+                accessible-role: none;
+            }
+            Text {
+                text: root.r.change;
+                font-size: Type.small;
+                color: Theme.ink-2;
+                overflow: elide;
+                horizontal-stretch: 1;
+                min-width: 0px;
+                accessible-role: none;
+            }
+        }
+    }
+}
+
+export component JournalDialog {
+    in property <[JournalRow]> rows;
+    in property <string> note;
+    in property <bool> can-undo;
+    in property <bool> can-undo-all;
+    in property <bool> busy;
+    callback picked(string);
+    // Up/Down/Home/End/PageUp/PageDown in the list (X15A11Y-2): the row Rust picked, -1 when
+    // the key is not one it uses.
+    callback key(string) -> int;
+    callback undo();
+    callback undo-all();
+    callback closed();
+
+    Dialog {
+        width: root.width;
+        height: root.height;
+        title: "Journal";
+        dialog-width: min(root.width - 48px, 640px);
+        enter-accepts: false;
+        cancelled => { root.closed(); }
+        Text {
+            text: root.note;
+            font-size: Type.small;
+            color: Theme.ink-3;
+            wrap: word-wrap;
+            min-height: self.preferred-height;
+        }
+        Rectangle {
+            height: min(root.height - 260px, 340px);
+            border-width: 1px;
+            border-color: Theme.line;
+            // A Tab stop with the arrow keys, so one change can be picked for Undo without the
+            // mouse (X15A11Y-2); the picked row is brought into view.
+            fs := FocusScope {
+                accessible-role: AccessibleRole.list;
+                accessible-label: "Changes";
+                key-pressed(e) => {
+                    let n = root.key(e.text);
+                    if (n < 0) {
+                        return reject;
+                    }
+                    let top = n * 44px;
+                    if (top < -list.content-y) {
+                        list.content-y = -top;
+                    } else if (top + 44px > -list.content-y + list.visible-height) {
+                        list.content-y = -(top + 44px - list.visible-height);
+                    }
+                    accept
+                }
+                list := ListView {
+                    for r in root.rows: JLine {
+                        r: r;
+                        clicked => {
+                            fs.focus();
+                            root.picked(r.id);
+                        }
+                    }
+                }
+            }
+            if root.rows.length == 0: Text {
+                text: "No changes on this PC yet.";
+                font-size: Type.small;
+                color: Theme.ink-3;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Button {
+                text: "Undo";
+                icon: AppIcons.undo;
+                enabled: root.can-undo && !root.busy;
+                tooltip: "Put back what was there before this change";
+                clicked => { root.undo(); }
+            }
+            Button {
+                text: "Undo all from this session";
+                kind: ButtonKind.ghost;
+                enabled: root.can-undo-all && !root.busy;
+                clicked => { root.undo-all(); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: "Close";
+                kind: ButtonKind.primary;
+                clicked => { root.closed(); }
+            }
+        }
+    }
+}
