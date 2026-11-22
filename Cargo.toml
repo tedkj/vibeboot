@@ -1,6 +1,6 @@
 [package]
 name = "vibeboot"
-version = "0.1.0-preview"
+version = "0.1.1-preview"
 description = "VibeBoot: Everything that starts with this PC, from every hiding place, with who signed each and an undo for every change."
 authors = ["Ted K. Johansen"]
 license = "AGPL-3.0-only"
